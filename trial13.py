@@ -42,9 +42,8 @@ def generate_card_id():
     return f"CARD{num_part}-{alpha_part}"
 
 def calculate_risk(payment_amount, card, site, country):
-    risk = 0
-    reasons = []
-    risk_factors = [
+    risk = random.uniform(0.1, 1.0)
+    reasons_list = [
         '결제금액이 카드 한도 근접',
         '고위험 시간대 사용',
         '미등록 기기 사용',
@@ -52,22 +51,27 @@ def calculate_risk(payment_amount, card, site, country):
         '과거 신고 내역 다수',
         '거래 패턴 이상 감지'
     ]
-    # 위험 점수 계산 (위험 비중 낮춤)
-    risk += random.uniform(0.1, 0.7)
+
+    # 카드 한도 관련
     if payment_amount > 0.7 * card['limit']:
         risk += 0.05
 
+    # 사용처 제한 관련
+    if card['restricted'] and card.get('allowed_sites') and site not in card['allowed_sites']:
+        risk += 0.1
+
     risk = min(risk, 1.0)
 
-    # 분석 사유 갯수 결정
+    # 분석 사유 개수 결정
     if risk <= 0.4:
         reasons = []
     elif risk <= 0.5:
-        reasons = random.sample(risk_factors, 1)
+        reasons = random.sample(reasons_list, 1)
     elif risk <= 0.7:
-        reasons = random.sample(risk_factors, 2)
+        reasons = random.sample(reasons_list, 2)
     else:
-        reasons = random.sample(risk_factors, 3)
+        reasons = random.sample(reasons_list, 3)
+
     return round(risk, 2), reasons
 
 st.title("가상카드 발급 & 결제 시뮬레이션")
@@ -108,7 +112,7 @@ if st.session_state.step == 1:
         st.session_state.step = 2
 
 # Step 2: 결제 요청
-elif st.session_state.step == 2:
+if st.session_state.step == 2:
     st.header("2. 결제 요청")
     selected_card = st.selectbox("결제에 사용할 카드 선택", options=list(st.session_state.cards_db.keys()))
     payment_amount = st.number_input("결제 금액", min_value=1, max_value=5000, value=80, step=10, key="pay_amount")
@@ -117,15 +121,14 @@ elif st.session_state.step == 2:
 
     if st.button("결제 시도"):
         card = st.session_state.cards_db[selected_card]
-        if payment_amount > card['limit']:
-            st.error("결제 금액이 카드 한도를 초과했습니다.")
-        elif card['expiry'] < datetime.now():
-            st.error("카드 유효기간이 만료되었습니다.")
-        elif card['restricted'] and card.get('allowed_sites') and site not in card['allowed_sites']:
+
+        # 사용처 제한 체크
+        if card['restricted'] and card.get('allowed_sites') and site not in card['allowed_sites']:
             st.error("AI 위험 탐지, 결제를 보류합니다. 사용처 제한 위반.")
         else:
             risk_score, reasons = calculate_risk(payment_amount, card, site, country)
             st.info(f"AI 위험 점수: {risk_score:.2f} | 분석 사유: {', '.join(reasons) if reasons else '없음'}")
+
             if risk_score > 0.4:
                 st.error("AI 위험 점수 과다, 결제를 거절합니다.")
             else:
@@ -143,7 +146,7 @@ elif st.session_state.step == 2:
                 st.session_state.step = 3
 
 # Step 3: 거래 기록 확인
-elif st.session_state.step == 3:
+if st.session_state.step == 3:
     st.header("3. 거래 기록 확인")
     if st.session_state.transactions_db:
         st.table(st.session_state.transactions_db)
