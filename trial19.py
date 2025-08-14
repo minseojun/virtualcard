@@ -23,7 +23,7 @@ if 'cards_db' not in st.session_state:
 if 'transactions_db' not in st.session_state:
     st.session_state.transactions_db = []
 if 'custom_allowed_sites_input' not in st.session_state:
-    st.session_state.custom_allowed_sites_input = "amazon.com\kbstar.com\ntemu.com"
+    st.session_state.custom_allowed_sites_input = "amazon.com\nkbstar.com\ntemu.com"
 if 'auth_pending' not in st.session_state:
     st.session_state.auth_pending = False
 if 'pending_payment' not in st.session_state:
