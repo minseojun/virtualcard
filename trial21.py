@@ -157,7 +157,8 @@ if st.session_state.cards_db:
                 }
                 st.session_state.risk_confirmation = True
 
-    if st.session_state.risk_confirmation:
+    # 위험점수 재확인 및 본인인증 단계
+    if st.session_state.risk_confirmation and st.session_state.pending_payment:
         st.subheader("위험점수 재확인")
         proceed = st.radio("위험점수가 높습니다. 그래도 결제 진행하시겠습니까?", ('아니오', '예'), key='confirm_risk')
         if proceed == '예':
@@ -169,6 +170,7 @@ if st.session_state.cards_db:
             st.session_state.auth_pending = False
 
     if st.session_state.auth_pending and st.session_state.pending_payment:
+        st.subheader("본인인증")
         if st.button("본인인증", key="auth_button"):
             pending = st.session_state.pending_payment
             st.success(f"결제 승인 완료 (AI 위험 점수: {pending['risk_score']:.2f})")
