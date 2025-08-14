@@ -146,7 +146,6 @@ if st.session_state.cards_db:
                     'reasons': reasons
                 })
             else:
-                st.warning("위험 점수가 높습니다. 결제를 계속 진행하려면 재차 확인 및 본인인증이 필요합니다.")
                 st.session_state.pending_payment = {
                     'card': card,
                     'selected_card': selected_card,
@@ -162,18 +161,23 @@ if st.session_state.cards_db:
         st.subheader("위험점수 재확인")
         proceed = st.radio("위험점수가 높습니다. 그래도 결제 진행하시겠습니까?", ('아니오', '예'), key='confirm_risk')
         if proceed == '예':
-            if st.button("본인인증", key="auth_button"):
-                pending = st.session_state.pending_payment
-                st.success(f"결제 승인 완료 (AI 위험 점수: {pending['risk_score']:.2f})")
-                pending['card']['active'] = False
-                st.info("유효 기간이 지나면 자동 폐기됩니다.")
-                st.session_state.transactions_db.append(pending)
-                st.session_state.pending_payment = None
-                st.session_state.risk_confirmation = False
+            st.session_state.auth_pending = True
         else:
             st.info("결제가 취소되었습니다.")
             st.session_state.pending_payment = None
             st.session_state.risk_confirmation = False
+            st.session_state.auth_pending = False
+
+    if st.session_state.auth_pending and st.session_state.pending_payment:
+        if st.button("본인인증", key="auth_button"):
+            pending = st.session_state.pending_payment
+            st.success(f"결제 승인 완료 (AI 위험 점수: {pending['risk_score']:.2f})")
+            pending['card']['active'] = False
+            st.info("유효 기간이 지나면 자동 폐기됩니다.")
+            st.session_state.transactions_db.append(pending)
+            st.session_state.pending_payment = None
+            st.session_state.risk_confirmation = False
+            st.session_state.auth_pending = False
 
 else:
     st.write("카드를 먼저 발급해주세요.")
