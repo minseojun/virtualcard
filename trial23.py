@@ -24,20 +24,8 @@ if 'transactions_db' not in st.session_state:
     st.session_state.transactions_db = []
 if 'custom_allowed_sites_input' not in st.session_state:
     st.session_state.custom_allowed_sites_input = "amazon.com\nkbstar.com\ntemu.com"
-if 'auth_pending' not in st.session_state:
-    st.session_state.auth_pending = False
 if 'pending_payment' not in st.session_state:
     st.session_state.pending_payment = None
-if 'risk_confirmation' not in st.session_state:
-    st.session_state.risk_confirmation = False
-
-
-def ai_recommend():
-    return {
-        "limit": random.choice([50, 100, 150, 200, 500]),
-        "duration_days": random.choice([1, 3, 7, 14, 30]),
-        "restricted_sites": random.choice([True, False])
-    }
 
 
 def generate_card_id():
@@ -95,11 +83,6 @@ if restrict_sites:
     )
     allowed_sites_list = [s.strip() for s in st.session_state.custom_allowed_sites_input.split('\n') if s.strip()]
 
-ai_cond = ai_recommend()
-st.caption(f"결제 한도 AI 추천: {ai_cond['limit']}")
-st.caption(f"유효기간 AI 추천: {ai_cond['duration_days']}일")
-st.caption(f"사용처 제한 AI 추천: {'적용' if ai_cond['restricted_sites'] else '미적용'}")
-
 if st.button("카드 발급"):
     card_id = generate_card_id()
     expiry = datetime.now() + timedelta(days=int(duration))
@@ -127,19 +110,21 @@ if st.session_state.cards_db:
         if payment_amount > card['limit']:
             st.error("결제 금액이 카드 한도를 초과했습니다. 결제를 보류합니다.")
         elif card['restricted'] and card.get('allowed_sites') and site not in card['allowed_sites']:
-            st.error("AI 위험 탐지, 결제를 보류합니다. 사용처 제한 위반.")
+            st.session_state.pending_payment = {
+                'card_id': selected_card,
+                'amount': payment_amount,
+                'site': site,
+                'country': country
+            }
         else:
             risk_score, reasons = calculate_risk(payment_amount, card, site, country)
-            st.info(f"AI 위험 점수: {risk_score:.2f} | 위험 요소: {', '.join(reasons) if reasons else '없음'}")
-
             if risk_score <= 0.4:
                 st.success("결제 승인 완료.")
                 card['active'] = False
                 st.info("유효 기간이 지나면 자동 폐기됩니다.")
                 st.session_state.transactions_db.append({
-                    'card': card,
-                    'selected_card': selected_card,
-                    'payment_amount': payment_amount,
+                    'card': selected_card,
+                    'amount': payment_amount,
                     'site': site,
                     'country': country,
                     'risk_score': risk_score,
@@ -147,42 +132,56 @@ if st.session_state.cards_db:
                 })
             else:
                 st.session_state.pending_payment = {
-                    'card': card,
-                    'selected_card': selected_card,
-                    'payment_amount': payment_amount,
+                    'card_id': selected_card,
+                    'amount': payment_amount,
                     'site': site,
                     'country': country,
                     'risk_score': risk_score,
                     'reasons': reasons
                 }
-                st.session_state.risk_confirmation = True
 
-    # 위험점수 재확인 및 본인인증 단계
-    if st.session_state.risk_confirmation and st.session_state.pending_payment:
-        st.subheader("위험점수 재확인")
-        proceed = st.radio("위험점수가 높습니다. 그래도 결제 진행하시겠습니까?", ('아니오', '예'), key='confirm_risk')
-        if proceed == '예':
-            st.session_state.auth_pending = True
+# ------------------- 위험점수 재확인 및 본인인증 -------------------
+if st.session_state.pending_payment:
+    pp = st.session_state.pending_payment
+    card = st.session_state.cards_db[pp['card_id']]
+    if 'risk_score' in pp and pp['risk_score'] > 0.4:
+        st.subheader("추가 확인 필요")
+        st.info(f"AI 위험 점수: {pp['risk_score']} | 위험 요소: {', '.join(pp['reasons'])}")
+        choice = st.radio("위험점수가 높습니다. 그래도 결제 진행하시겠습니까?", ("아니오", "예"), key="override_choice")
+        if choice == "예":
+            if st.button("본인인증 진행", key="do_auth"):
+                st.success("결제 승인 완료")
+                card['active'] = False
+                st.info("유효 기간이 지나면 자동 폐기됩니다.")
+                st.session_state.transactions_db.append({
+                    'card': pp['card_id'],
+                    'amount': pp['amount'],
+                    'site': pp['site'],
+                    'country': pp['country'],
+                    'risk_score': pp['risk_score'],
+                    'reasons': pp['reasons']
+                })
+                st.session_state.pending_payment = None
         else:
             st.info("결제가 취소되었습니다.")
-            st.session_state.pending_payment = None
-            st.session_state.risk_confirmation = False
-            st.session_state.auth_pending = False
-
-    if st.session_state.auth_pending and st.session_state.pending_payment:
-        st.subheader("본인인증")
-        if st.button("본인인증", key="auth_button"):
-            pending = st.session_state.pending_payment
-            st.success(f"결제 승인 완료 (AI 위험 점수: {pending['risk_score']:.2f})")
-            pending['card']['active'] = False
-            st.info("유효 기간이 지나면 자동 폐기됩니다.")
-            st.session_state.transactions_db.append(pending)
-            st.session_state.pending_payment = None
-            st.session_state.risk_confirmation = False
-            st.session_state.auth_pending = False
+            if st.button("보류된 결제 닫기", key="close_pending"):
+                st.session_state.pending_payment = None
+    else:
+        st.success("결제 승인 완료.")
+        card['active'] = False
+        st.info("유효 기간이 지나면 자동 폐기됩니다.")
+        st.session_state.transactions_db.append({
+            'card': pp['card_id'],
+            'amount': pp['amount'],
+            'site': pp['site'],
+            'country': pp['country'],
+            'risk_score': pp.get('risk_score', 0),
+            'reasons': pp.get('reasons', [])
+        })
+        st.session_state.pending_payment = None
 
 else:
-    st.write("카드를 먼저 발급해주세요.")
+    st.info("먼저 카드를 발급해주세요.")
 
 # ------------------- 거래 기록 -------------------
 st.header("3. 거래 기록 확인")
